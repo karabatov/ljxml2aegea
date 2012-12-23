@@ -8,8 +8,8 @@ include("config.inc.php");
 echo "ljuser=$ljuser\n";
 @$connect = mysql_connect($e2server,$e2user,$e2password) or die("DB is not avalible");
 mysql_select_db ($e2database);
-mysql_query ("set character_set_client='cp1251'"); 
-mysql_query ("set character_set_results='cp1251'"); 
+mysql_query ("set character_set_client='cp1251'");
+mysql_query ("set character_set_results='cp1251'");
 mysql_query ("set collation_connection='cp1251_general_ci'");
 
 echo "connected to sql\n";
@@ -20,7 +20,7 @@ function ljclean($ljtext)
     echo "* in ljclean function\n";
     $userPA = '/<lj user="(.*?)" ?\/?>/i';
     $commPA = '/<lj comm="(.*?)" ?\/?>/i';
-    $namedCutPA = '/<lj-cut +text="(.*?)" ?\/?>/i'; 
+    $namedCutPA = '/<lj-cut +text="(.*?)" ?\/?>/i';
     $cutPA = '/<lj-cut>/i';
     $ccutPA = '/<\/lj-cut>/i';
 
@@ -37,73 +37,64 @@ function ljclean($ljtext)
 }
 
 // XML files parser
-function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
+function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags)
 {
     echo "in xmlparser function\n";
     echo "file_id = $file_id\n";
-	// Load source file
-	$entry = simplexml_load_file($file_id);
-				
-	// Post data
-	$p_date=$entry->event_timestamp;
-	$p_subj=$entry->subject;
-	$p_text=ljclean($entry->event);
-	if (($entry->security=='usemask')||($entry->security=='private')){ // "usemask" or "private" => IsVisible = 0
+    // Load source file
+    $entry = simplexml_load_file($file_id);
+
+    // Post data
+    $p_date=$entry->event_timestamp;
+    $p_subj=$entry->subject;
+    $p_text=ljclean($entry->event);
+    if (($entry->security=='usemask')||($entry->security=='private')){ // "usemask" or "private" => IsVisible = 0
         $p_private=0;
     }
     else {
         $p_private=1;
     }
-	//$p_tag=$entry->taglist;
+    //$p_tag=$entry->taglist;
     $p_postid=$entry->ditemid;
 
-	// If post has no title, take first 50 characters
-	if ($p_subj=='')
-		{
-		// Strip tags 
-		$p_subj_tmp = preg_split ("/</", $p_text);
-		$p_subj=substr($p_subj_tmp[0],0,50);
-		$p_subj.='...';
-		}
-				
-	// Comments
-	// Store all comments for now
+    // If post has no title, take first 50 characters
+    if ($p_subj==''){
+        // Strip tags
+        $p_subj_tmp = preg_split ("/</", $p_text);
+        $p_subj=substr($p_subj_tmp[0],0,50);
+        $p_subj.='...';
+        }
+
+    // Comments
+    // Store all comments for now
     $total_comm=0;
     if (file_exists("./".$ljuser."/C-".$total_post)){
-    $xml = simplexml_load_file("./".$ljuser."/C-".$total_post);
-    $i=1;
-    foreach ($xml->comment as $comment){
-        echo "i = $i, total_comm = $total_comm\n";
-        print_r($comment);
-        $c_id[$i]=$comment->id;
-        if ($comment->user==''){
-            $c_author[$i]='anonymous';
-        } else {
-            $c_author[$i]= $comment->user;
-        }
-        $c_text[$i]=ljclean($comment->body);
-        $c_parentid[$i]=$comment->parentid;
-        if ($comment->state=='S'){
-            $c_state[$i]=0;
-        } else {
-            $c_state[$i]=1;
-        }
-        $c_date[$i]=strtotime($comment->date);
-        $total_comm++;
-        $i++;
+        $xml = simplexml_load_file("./".$ljuser."/C-".$total_post);
+        $i=1;
+        foreach ($xml->comment as $comment){
+            echo "i = $i, total_comm = $total_comm\n";
+            print_r($comment);
+            $c_id[$i]=$comment->id;
+            $c_author[$i]=$comment->user=='' ? 'anonymous' : $comment->user;
+            $c_text[$i]=ljclean($comment->body);
+            $c_parentid[$i]=$comment->parentid;
+            $c_state[$i]=$comment->state=='S' ? 0 : 1;
+            $c_date[$i]=strtotime($comment->date);
+            $total_comm++;
+            $i++;
         }
     }
-	// Convert to cp1251
-	$p_subj = iconv('UTF-8','Windows-1251',$p_subj);
-	$p_text = iconv('UTF-8','Windows-1251',$p_text);
-	
-	// ""
-	$p_text=mysql_escape_string($p_text);
-	$p_subj=mysql_escape_string($p_subj);
+    // Convert to cp1251
+    $p_subj = iconv('UTF-8','Windows-1251',$p_subj);
+    $p_text = iconv('UTF-8','Windows-1251',$p_text);
 
-	// Put post into DB
-	// ID = $p_postid
-	// Title = $p_subj
+    // ""
+    $p_text=mysql_escape_string($p_text);
+    $p_subj=mysql_escape_string($p_subj);
+
+    // Put post into DB
+    // ID = $p_postid
+    // Title = $p_subj
     // Text = $p_text
     // OriginalAlias = $p_postid
     // IsVisible = $p_private
@@ -115,7 +106,7 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
     $result = mysql_query ($query);
     if (!$result) {
         echo "$query\n";
-        die('Invalid query: ' . mysql_error());
+        die('Invalid query: ' . mysql_error() . '\n');
     }
     // Assign alias to post
     // ID = $p_postid
@@ -126,10 +117,10 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
     $result = mysql_query ($query);
     if (!$result) {
         echo "$query\n";
-        die('Invalid query: ' . mysql_error());
+        die('Invalid query: ' . mysql_error() . '\n');
     }
-	
-	// Put comments into DB
+
+    // Put comments into DB
     // ID = 100000 + $c_id
     // NoteID = $p_postid
     // AuthorName = $c_author
@@ -147,7 +138,7 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
         $c_text[$i] = iconv('UTF-8','Windows-1251',$c_text[$i]);
         $c_author[$i] = iconv('UTF-8','Windows-1251',$c_author[$i]);
         // ""
-	    $c_text[$i]=mysql_escape_string($c_text[$i]);
+        $c_text[$i]=mysql_escape_string($c_text[$i]);
         echo "---------\n";
         echo "i = $i, total_comm = $total_comm\n";
         echo "c_id = $c_id[$i]\n";
@@ -157,11 +148,11 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
         echo "c_text = $c_text[$i]\n";
         if (($c_author[$i]==$ljuser)&&($c_parentid[$i]!='')){
             $c_parentid[$i]=$c_parentid[$i]+100000;
-            $query = "INSERT INTO ".$e2tabprefix."Comments (ID,IsReplyVisible,Reply,ReplyStamp,ReplyLastModified) VALUES ($c_parentid[$i],1,'$c_text[$i]','$c_date[$i]','$c_date[$i]') ON DUPLICATE KEY UPDATE IsReplyVisible=1,Reply='$c_text[$i]',ReplyStamp='$c_date[$i]',ReplyLastModified='$c_date[$i]';"; 
+            $query = "INSERT INTO ".$e2tabprefix."Comments (ID,IsReplyVisible,Reply,ReplyStamp,ReplyLastModified) VALUES ($c_parentid[$i],1,'$c_text[$i]','$c_date[$i]','$c_date[$i]') ON DUPLICATE KEY UPDATE IsReplyVisible=1,Reply='$c_text[$i]',ReplyStamp='$c_date[$i]',ReplyLastModified='$c_date[$i]';";
             $result = mysql_query ($query);
             if (!$result) {
                 echo "$query\n";
-                die('Invalid query: ' . mysql_error());
+                die('Invalid query: ' . mysql_error() . '\n');
             }
         } else {
             $c_id[$i]=$c_id[$i]+100000;
@@ -169,18 +160,18 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset)
             $result = mysql_query ($query);
             if (!$result) {
                 echo "$query\n";
-                die('Invalid query: ' . mysql_error());
+                die('Invalid query: ' . mysql_error() . '\n');
             }
 
         }
-	}				
-return true;		
+    }
+return true;
 }
 
 $files = glob("./".$ljuser."/L-*");
 foreach($files as $file_id){
     $total_post=preg_replace("/(.*)L-(.*)/","\\2",$file_id);
-	xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset);
-}	
+    xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags);
+}
 echo "Posts processed: ".count($files)."\n";
 ?>
