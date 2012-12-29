@@ -6,18 +6,21 @@
 // DB connection
 include("config.inc.php");
 echo "ljuser=$ljuser\n";
-@$connect = mysql_connect($e2server,$e2user,$e2password) or die("DB is not avalible");
-mysql_select_db ($e2database);
-mysql_query ("set character_set_client='cp1251'");
-mysql_query ("set character_set_results='cp1251'");
-mysql_query ("set collation_connection='cp1251_general_ci'");
+@$connect = mysql_connect($e2server, $e2user, $e2password) or die("DB is not avalible");
+mysql_select_db($e2database);
+my_sql_query("set character_set_client='cp1251'");
+my_sql_query("set character_set_results='cp1251'");
+my_sql_query("set collation_connection='cp1251_general_ci'");
+// Ensure future e2 content isn't overwritten
+my_sql_query("ALTER TABLE " . $e2tabprefix . "Comments AUTO_INCREMENT = 500000");
+my_sql_query("ALTER TABLE " . $e2tabprefix . "Notes AUTO_INCREMENT = 1000000000");
 
 echo "connected to sql\n";
 
 // Convert tags to ascii for URLs
 function to_ascii($str, $delimiter='-') {
 
-    $toreplace  = array(
+    $toreplace = array(
         "Ä","ä","Æ","æ","Ǽ","ǽ","Å","å","Ǻ","ǻ","À","Á","Â","Ã","à","á","â","ã","Ā","ā","Ă","ă","Ą","ą","Ǎ","ǎ","Ạ","Ạ","ạ","Ả","ả","Ấ","ấ","Ầ","ầ","Ẩ","ẩ","Ẫ","ẫ","Ậ","ậ","Ắ","ắ","Ằ","ằ","Ẳ","ẳ","Ẵ","ẵ","Ặ","ặ",
         "Ç","ç","Ć","ć","Ĉ","ĉ","Ċ","ċ","Č","č",
         "Ð","ð","Ď","ď","Đ","đ",
@@ -88,8 +91,7 @@ function to_ascii($str, $delimiter='-') {
 
 
 // LJ tag cleaner
-function ljclean($ljtext)
-{
+function ljclean($ljtext) {
     //echo "* in ljclean function\n";
     $userPA = '|<\s*lj\s+user\s*=\s*["\']([\w-]+)["\']\s*/?\s*>|i';
     $commPA = '|<\s*lj\s+comm\s*=\s*["\']([\w-]+)["\']\s*/?\s*>|i';
@@ -109,178 +111,219 @@ function ljclean($ljtext)
     return $ljclean;
 }
 
-// XML files parser
-function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags_id)
-{
-    echo "in xmlparser function\n";
-    echo "file_id = $file_id\n";
+function get_postdata($file_id) {
+
+    $pd = array();
+
     // Load source file
     $entry = simplexml_load_file($file_id);
 
     // Post data
-    $p_date=$entry->event_timestamp;
-    $p_subj=$entry->subject;
-    $p_text=$entry->event;
-    if (($entry->security=='usemask')||($entry->security=='private')){ // "usemask" or "private" => IsVisible = 0
-        $p_private=0;
+    $pd['date'] = $entry -> event_timestamp;
+    $entry -> subject == '' ? $pd['subject'] = '(no title)' : $pd['subject'] = $entry -> subject;
+    $pd['text'] = $entry -> event;
+    if (($entry -> security == 'usemask') || ($entry -> security == 'private')) { // "usemask" or "private" => IsVisible = 0
+        $pd['visible'] = 0;
     }
     else {
-        $p_private=1;
+        $pd['visible'] = 1;
     }
-    $p_addtags=$entry->taglist;
-    $p_postid=$entry->ditemid;
-    $p_mood=$entry->props->current_mood;
-    $p_music=$entry->props->current_music;
-    $p_location=$entry->props->current_location;
-    $p_coords=$entry->props->current_coords;
-    echo "p_location\n";
-    print_r($p_location);
-    echo "p_music\n";
-    print_r($p_music);
-    echo "p_coords\n";
-    print_r($p_coords);
-
-    // If post has no title, take first 50 characters
-    if ($p_subj==''){
-        // Strip tags
-        $p_subj_tmp = preg_split ("/</", $p_text);
-        $p_subj=substr($p_subj_tmp[0],0,50);
-        $p_subj.='...';
-    }
+    $pd['tags'] = $entry -> props -> taglist;
+    $pd['postid'] = $entry -> ditemid;
+    $pd['mood'] = $entry -> props -> current_mood;
+    $pd['music'] = $entry -> props -> current_music;
+    $pd['location'] = $entry -> props -> current_location;
+    $pd['coords'] = $entry -> props -> current_coords;
 
     // Append mood, music & location info
-    $p_text.=PHP_EOL.PHP_EOL;
+
     // Location
-    if ($p_location){
-        if ($p_coords){
-            $p_loctext=$p_coords . ' (' . $p_location . ')';
-            $p_text.='<strong>Current location:</strong> <a href="http://maps.google.com/maps?q='.urlencode($p_loctext).'">'.$p_location.'</a>'.PHP_EOL;
+    if ($pd['location']) {
+        if ($pd['coords']) {
+            $p_loctext = $pd['coords'] . ' (' . $pd['location'] . ')';
+            $pd['text'] .= PHP_EOL . PHP_EOL . '<strong>Current location:</strong> <a href="http://maps.google.com/maps?q=' . urlencode($p_loctext) . '">' . $pd['location'] . '</a>' . PHP_EOL;
         } else {
-            $p_text.='<strong>Current location:</strong> <a href="http://maps.google.com/maps?q='.urlencode($p_location).'">'.$p_location.'</a>'.PHP_EOL;
+            $pd['text'] .= PHP_EOL . PHP_EOL . '<strong>Current location:</strong> <a href="http://maps.google.com/maps?q=' . urlencode($pd['location']) . '">' . $pd['location'] . '</a>' . PHP_EOL;
         }
     }
-    // Mood
-    if ($p_mood){
-        $p_text.='<strong>Current mood:</strong> '.$p_mood.PHP_EOL;
-    }
-    // Music
-    if ($p_music){
-        $p_text.='<strong>Current music:</strong> '.$p_music;
-    }
 
-    // Comments
-    // Store all comments for now
-    $total_comm=0;
-    if (file_exists("./".$ljuser."/C-".$total_post)){
-        $xml = simplexml_load_file("./".$ljuser."/C-".$total_post);
-        $i=1;
-        foreach ($xml->comment as $comment){
-            //echo "i = $i, total_comm = $total_comm\n";
-            //print_r($comment);
-            $c_id[$i]=$comment->id;
-            $c_author[$i]=$comment->user=='' ? 'anonymous' : $comment->user;
-            $c_text[$i]=ljclean($comment->body);
-            $c_parentid[$i]=$comment->parentid;
-            $c_state[$i]=$comment->state=='S' ? 0 : 1;
-            $c_date[$i]=strtotime($comment->date);
-            $total_comm++;
+    // Mood
+    if ($pd['mood'])
+        $pd['text'] .= '<strong>Current mood:</strong> ' . $pd['mood'] . PHP_EOL;
+
+    // Music
+    if ($pd['music'])
+        $pd['text'] .= '<strong>Current music:</strong> ' . $pd['music'];
+
+    // Clean up tags
+    $pd['subject'] = strip_tags($pd['subject']);
+    $pd['text'] = ljclean($pd['text']);
+
+    return $pd;
+}
+
+function get_commentdata($file_id) {
+
+    $cd = array();
+
+    $c_file_id = preg_replace('/L-/', 'C-', $file_id);
+
+    if (file_exists($c_file_id)) {
+        $xml = simplexml_load_file($c_file_id);
+        $i = 1;
+        foreach ($xml -> comment as $comment) {
+            $cd[$i]['id'] = $comment -> id;
+            $cd[$i]['author'] = $comment -> user == '' ? 'anonymous' : $comment -> user;
+            $cd[$i]['text'] = ljclean($comment -> body);
+            $cd[$i]['parentid'] = $comment -> parentid;
+            $cd[$i]['state'] = $comment -> state == 'S' ? 0 : 1;
+            $cd[$i]['date'] = strtotime($comment -> date);
             $i++;
         }
     }
 
-    // Strip tags, convert
-    $p_subj = strip_tags($p_subj);
-    //$p_subj = htmlentities($p_subj,ENT_NOQUOTES);
+    return $cd;
+}
+
+function my_sql_query($query) {
+
+    $result = mysql_query ($query);
+    if (!$result) {
+        echo "$query\n";
+        die('Invalid query: ' . mysql_error() . '\n');
+    }
+
+    return $result;
+}
+
+function put_post_db($pd, $e2tabprefix, $offset) {
 
     // Convert to cp1251
-    $p_subj = iconv('UTF-8','Windows-1251',$p_subj);
-    $p_text = iconv('UTF-8','Windows-1251',$p_text);
-    $p_text = ljclean($p_text);
+    $pd['subject'] = iconv('UTF-8', 'Windows-1251//IGNORE', $pd['subject']);
+    $pd['text'] = iconv('UTF-8', 'Windows-1251//IGNORE', $pd['text']);
 
     // ""
-    $p_text=mysql_escape_string($p_text);
-    $p_subj=mysql_escape_string($p_subj);
+    $pd['text'] = mysql_escape_string($pd['text']);
+    $pd['subject'] = mysql_escape_string($pd['subject']);
 
     // Put post into DB
-    // ID = $p_postid
-    // Title = $p_subj
-    // Text = $p_text
-    // OriginalAlias = $p_postid
-    // IsVisible = $p_private
-    // Stamp = $p_date
-    // LastModified = $p_date
+    // ID = $pd['postid']
+    // Title = $pd['subject']
+    // Text = $pd['text']
+    // OriginalAlias = $pd['postid']
+    // IsVisible = $pd['visible']
+    // Stamp = $pd['date']
+    // LastModified = $pd['date']
     // IsDST = 0
     // Offset = $offset
-    $query = "INSERT INTO ".$e2tabprefix."Notes (ID,Title,OriginalAlias,Text,IsPublished,IsVisible,Stamp,LastModified,IsDST,Offset,IP) VALUES ($p_postid,'$p_subj','$p_postid','$p_text',1,$p_private,'$p_date','$p_date',0,$offset,'127.0.0.1') ON DUPLICATE KEY UPDATE ID=$p_postid,Title='$p_subj',OriginalAlias='$p_postid',Text='$p_text',IsPublished=1,IsVisible=$p_private,Stamp='$p_date',LastModified='$p_date',IsDST=0,Offset=$offset,IP='127.0.0.1';";
-    $result = mysql_query ($query);
-    if (!$result) {
-        echo "$query\n";
-        die('Invalid query: ' . mysql_error() . '\n');
-    }
+    $query = "INSERT INTO " . $e2tabprefix . "Notes (ID,Title,OriginalAlias,Text,IsPublished,IsVisible,Stamp,LastModified,IsDST,Offset,IP) VALUES (" . $pd['postid'] . ",'" . $pd['subject'] . "','" . $pd['postid'] . "','" . $pd['text'] . "',1," . $pd['visible'] . ",'" . $pd['date'] . "','" . $pd['date'] . "',0,$offset,'127.0.0.1') ON DUPLICATE KEY UPDATE ID=" . $pd['postid'] . ",Title='" . $pd['subject'] . "',OriginalAlias='" . $pd['postid'] . "',Text='" . $pd['text'] . "',IsPublished=1,IsVisible=" . $pd['visible'] . ",Stamp='" . $pd['date'] . "',LastModified='" . $pd['date'] . "',IsDST=0,Offset=$offset,IP='127.0.0.1'";
+    $result = my_sql_query($query);
 
     // Assign alias to post
-    // ID = $p_postid
-    // EntityID = $p_postid
-    // Alias = $p_postid
-    // Stamp = $p_date
-    $query = "INSERT INTO ".$e2tabprefix."Aliases (ID,EntityID,Alias,Stamp) VALUES ($p_postid,$p_postid,'$p_postid','$p_date') ON DUPLICATE KEY UPDATE ID=$p_postid,EntityID=$p_postid,Alias='$p_postid',Stamp='$p_date';";
-    $result = mysql_query ($query);
-    if (!$result) {
-        echo "$query\n";
-        die('Invalid query: ' . mysql_error() . '\n');
-    }
+    // ID = $pd['postid']
+    // EntityID = $pd['postid']
+    // Alias = $pd['postid']
+    // Stamp = $pd['date']
+    $query = "INSERT INTO " . $e2tabprefix . "Aliases (ID,EntityID,Alias,Stamp) VALUES (" . $pd['postid'] . "," . $pd['postid'] . ",'" . $pd['postid'] . "','" . $pd['date'] . "') ON DUPLICATE KEY UPDATE ID=" . $pd['postid'] . ",EntityID=" . $pd['postid'] . ",Alias='" . $pd['postid'] . "',Stamp='" . $pd['date'] . "'";
+    $result = my_sql_query($query);
 
-    // Put tags into DB
-    $p_addtags_id = create_tags($e2tabprefix,$p_addtags);
-    assign_tags($e2tabprefix,$p_postid,$addtags_id);
-    assign_tags($e2tabprefix,$p_postid,$p_addtags_id);
+    return true;
+}
+
+function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
 
     // Put comments into DB
-    // ID = 100000 + $c_id
+    // ID = 100000 + $cd['id']
     // NoteID = $p_postid
-    // AuthorName = $c_author
-    // AuthorEmail $c_author + livejournal.com
-    // Text = $c_text
+    // AuthorName = $cd['author']
+    // AuthorEmail $cd['author'] + @livejournal.com
+    // Text = $cd['text']
     // Reply
-    // IsVisible = $c_state
+    // IsVisible = $cd['state']
     // IsReplyVisible
-    // Stamp = $c_date
-    // LastModified = $c_date
+    // Stamp = $cd['date']
+    // LastModified = $cd['date']
     // ReplyStamp
     // ReplyLastModified
-    for ($i=1;$i<=$total_comm;$i++){
-        if ($c_text[$i]==''){$c_text[$i]='(deleted comment)';};
-        $c_text[$i] = iconv('UTF-8','Windows-1251//IGNORE',$c_text[$i]);
-        $c_author[$i] = iconv('UTF-8','Windows-1251//IGNORE',$c_author[$i]);
-        // ""
-        $c_text[$i]=mysql_escape_string($c_text[$i]);
-        //echo "---------\n";
-        //echo "i = $i, total_comm = $total_comm\n";
-        //echo "c_id = $c_id[$i]\n";
-        //echo "c_parentid = $c_parentid[$i]\n";
-        //echo "p_postid = $p_postid\n";
-        //echo "c_author = $c_author[$i]\n";
-        //echo "c_text = $c_text[$i]\n";
-        if (($c_author[$i]==$ljuser)&&($c_parentid[$i]!='')){
-            $c_parentid[$i]=$c_parentid[$i]+100000;
-            $query = "INSERT INTO ".$e2tabprefix."Comments (ID,IsReplyVisible,Reply,ReplyStamp,ReplyLastModified) VALUES ($c_parentid[$i],1,'$c_text[$i]','$c_date[$i]','$c_date[$i]') ON DUPLICATE KEY UPDATE IsReplyVisible=1,Reply='$c_text[$i]',ReplyStamp='$c_date[$i]',ReplyLastModified='$c_date[$i]';";
-            $result = mysql_query ($query);
-            if (!$result) {
-                echo "$query\n";
-                die('Invalid query: ' . mysql_error() . '\n');
-            }
-        } else {
-            $c_id[$i]=$c_id[$i]+100000;
-            $query = "INSERT INTO ".$e2tabprefix."Comments (ID,NoteID,AuthorName,AuthorEmail,Text,IsVisible,Stamp,LastModified) VALUES ($c_id[$i],$p_postid,'$c_author[$i]','".$c_author[$i]."@livejournal.com','$c_text[$i]','$c_state[$i]','$c_date[$i]','$c_date[$i]') ON DUPLICATE KEY UPDATE NoteID=$p_postid,AuthorName='$c_author[$i]',AuthorEmail='".$c_author[$i]."@livejournal.com',Text='$c_text[$i]',IsVisible='$c_state[$i]',Stamp='$c_date[$i]',LastModified='$c_date[$i]';"; 
-            $result = mysql_query ($query);
-            if (!$result) {
-                echo "$query\n";
-                die('Invalid query: ' . mysql_error() . '\n');
-            }
+    for ($i = 1; $i <= count($cd); $i++) {
+        if ($cd[$i]['text'] == '')
+            $cd[$i]['text'] = '(deleted comment)';
 
+        // Convert encoding
+        $cd[$i]['text'] = iconv('UTF-8', 'Windows-1251//IGNORE', $cd[$i]['text']);
+        $cd[$i]['author'] = iconv('UTF-8', 'Windows-1251//IGNORE', $cd[$i]['author']);
+
+        // ""
+        $cd[$i]['text'] = mysql_escape_string($cd[$i]['text']);
+
+        // Check if comment is a reply by journal author
+        if (($cd[$i]['author'] == $ljuser) && ($cd[$i]['parentid'] != '')) {
+            // Ensure existing e2 comments aren't overwritten
+            $cd[$i]['parentid'] += 100000;
+            $query = "INSERT INTO " . $e2tabprefix . "Comments (ID,IsReplyVisible,Reply,ReplyStamp,ReplyLastModified) VALUES (" . $cd[$i]['parentid'] . ",1,'" . $cd[$i]['text'] . "','" . $cd[$i]['date'] . "','" . $cd[$i]['date']. "') ON DUPLICATE KEY UPDATE IsReplyVisible=1,Reply='" . $cd[$i]['text'] . "',ReplyStamp='" . $cd[$i]['date'] . "',ReplyLastModified='" . $cd[$i]['date'] . "'";
+            $result = my_sql_query($query);
+        } else {
+            // Ensure existing e2 comments aren't overwritten
+            $cd[$i]['id'] += 100000;
+            $query = "INSERT INTO " . $e2tabprefix . "Comments (ID,NoteID,AuthorName,AuthorEmail,Text,IsVisible,Stamp,LastModified) VALUES (" . $cd[$i]['id'] . ",$p_postid,'" . $cd[$i]['author'] . "','" . $cd[$i]['author'] . "@livejournal.com','" . $cd[$i]['text'] . "','" . $cd[$i]['state'] . "','" . $cd[$i]['date'] . "','" . $cd[$i]['date'] . "') ON DUPLICATE KEY UPDATE NoteID=$p_postid,AuthorName='" . $cd[$i]['author'] . "',AuthorEmail='" . $cd[$i]['author'] . "@livejournal.com',Text='" . $cd[$i]['text'] . "',IsVisible='" . $cd[$i]['state'] . "',Stamp='" . $cd[$i]['date'] . "',LastModified='" . $cd[$i]['date'] . "';"; 
+            $result = my_sql_query($query);
         }
     }
-return true;
+
+    return true;
+}
+
+function get_e2_postid($e2tabprefix, $pd_text) {
+
+    $e2_postid = '';
+
+    // This is very dumb but I haven't come up w/anything better yet
+    $matchnum = preg_match_all('|href="([^"]+)/all/([^"/]+)/?"|i', $pd_text, $matches, PREG_SET_ORDER);
+
+    if ($matchnum > 0) {
+        $alias = $matches[count($matches) - 1][2];
+
+        $query = "SELECT EntityID FROM " . $e2tabprefix . "Aliases WHERE Alias='$alias'";
+        $result = my_sql_query($query);
+        $t_res = mysql_fetch_assoc($result);
+        $e2_postid = $t_res['EntityID'];
+    }
+
+    return $e2_postid;
+}
+
+// XML files parser
+function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $addtags_id, $ignoretag) {
+    echo "Processing file $file_id\n";
+
+    // Get post data
+    $pd = get_postdata($file_id);
+
+    // Get comment data
+    $cd = get_commentdata($file_id);
+
+    // Check if post has "ignore tag"
+    $tag_pos = strpos($pd['tags'], $ignoretag);
+    if ($tag_pos === false) {
+        // Put post into DB
+        put_post_db($pd, $e2tabprefix, $offset);
+
+        // Put tags into DB
+        $p_addtags_id = create_tags($e2tabprefix, $pd['tags']);
+        assign_tags($e2tabprefix, $pd['postid'], $addtags_id);
+        assign_tags($e2tabprefix, $pd['postid'], $p_addtags_id);
+
+        // Put comments into DB
+        put_comments_db($cd, $pd['postid'], $ljuser, $e2tabprefix, $offset);
+
+    } else {
+        // Parse post text for e2 link
+        $e2_postid = get_e2_postid($e2tabprefix, $pd['text']);
+        if ($e2_postid)
+            put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset);
+    }
+
+    return true;
 }
 
 function create_tags($e2tabprefix,$addtags){
@@ -351,12 +394,13 @@ function assign_tags($e2tabprefix,$p_postid,$tags_id){
 }
 
 $files = glob("./".$ljuser."/L-*");
+natsort($files);
 foreach($files as $file_id){
-    $total_post=preg_replace("/(.*)L-(.*)/","\\2",$file_id);
+    $current_post=preg_replace("/(.*)L-(.*)/","$2",$file_id);
     // Update global tags
     $addtags_id = create_tags($e2tabprefix,$addtags);
     // Parse and upload posts
-    xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags_id);
+    xmlparser($file_id,$current_post,$ljuser,$e2tabprefix,$offset,$addtags_id,$ignoretag);
 }
 echo "Posts processed: ".count($files)."\n";
 ?>
