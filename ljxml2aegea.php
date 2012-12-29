@@ -91,20 +91,20 @@ function to_ascii($str, $delimiter='-') {
 function ljclean($ljtext)
 {
     //echo "* in ljclean function\n";
-    $userPA = '/<lj user="(.*?)" ?\/?>/i';
-    $commPA = '/<lj comm="(.*?)" ?\/?>/i';
-    $namedCutPA = '/<lj-cut +text="(.*?)" ?\/?>/i';
-    $cutPA = '/<lj-cut>/i';
-    $ccutPA = '/<\/lj-cut>/i';
+    $userPA = '|<\s*lj\s+user\s*=\s*["\']([\w-]+)["\']\s*/?\s*>|i';
+    $commPA = '|<\s*lj\s+comm\s*=\s*["\']([\w-]+)["\']\s*/?\s*>|i';
+    $namedCutPA = '|<\s*lj-cut\s+text="([^"]*)"\s*>|is';
+    $cutPA = '|<lj-cut>|i';
+    $ccutPA = '|</lj-cut>|i';
 
-    $userRE = '<a href="http:\/\/www.livejournal.com/users\/\\1" class="lj-user">\\1<\/a>';
-    $commRE = '<a href="http:\/\/community.livejournal.com\/\\1/" class="lj-comm">\\1<\/a>';
+    $userRE = '<a href="http://$1.livejournal.com" class="lj-user">$1</a>';
+    $commRE = '<a href="http://$1.livejournal.com" class="lj-comm">$1</a>';
 
     $ljclean = preg_replace($userPA,$userRE,$ljtext);
-    $ljclean = preg_replace($commPA,$commRE,$ljtext);
-    $ljclean = preg_replace($namedCutPA,'\\1',$ljtext);
-    $ljclean = preg_replace($cutPA,'',$ljtext);
-    $ljclean = preg_replace($ccutPA,'',$ljtext);
+    $ljclean = preg_replace($commPA,$commRE,$ljclean);
+    $ljclean = preg_replace($namedCutPA,'$1',$ljclean);
+    $ljclean = preg_replace($cutPA,'',$ljclean);
+    $ljclean = preg_replace($ccutPA,'',$ljclean);
 
     return $ljclean;
 }
@@ -120,7 +120,7 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags_id
     // Post data
     $p_date=$entry->event_timestamp;
     $p_subj=$entry->subject;
-    $p_text=ljclean($entry->event);
+    $p_text=$entry->event;
     if (($entry->security=='usemask')||($entry->security=='private')){ // "usemask" or "private" => IsVisible = 0
         $p_private=0;
     }
@@ -146,7 +146,7 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags_id
         $p_subj_tmp = preg_split ("/</", $p_text);
         $p_subj=substr($p_subj_tmp[0],0,50);
         $p_subj.='...';
-        }
+    }
 
     // Append mood, music & location info
     $p_text.=PHP_EOL.PHP_EOL;
@@ -187,9 +187,15 @@ function xmlparser($file_id,$total_post,$ljuser,$e2tabprefix,$offset,$addtags_id
             $i++;
         }
     }
+
+    // Strip tags, convert
+    $p_subj = strip_tags($p_subj);
+    //$p_subj = htmlentities($p_subj,ENT_NOQUOTES);
+
     // Convert to cp1251
     $p_subj = iconv('UTF-8','Windows-1251',$p_subj);
     $p_text = iconv('UTF-8','Windows-1251',$p_text);
+    $p_text = ljclean($p_text);
 
     // ""
     $p_text=mysql_escape_string($p_text);
