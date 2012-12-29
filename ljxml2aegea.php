@@ -3,9 +3,22 @@
 
 //error_reporting(E_ALL);
 
+$config = simplexml_load_file('ljdump.config');
+
+$e2server = $config -> e2server ? $config -> e2server : 'localhost';
+$e2database = $config -> e2database ? $config -> e2database : 'e2db';
+$e2user = $config -> e2user ? $config -> e2user : 'root';
+$e2password = $config -> e2password ? $config -> e2password : '';
+$e2tabprefix = $config -> e2tabprefix ? $config -> e2tabprefix : 'e2Blog';
+$offset = $config -> offset ? $config -> offset : 0;
+$addtags = $config -> addtags ? $config -> addtags : 'LiveJournal';
+$ignoretag = $config -> ignoretag ? $config -> ignoretag : 'e2import';
+$ljuser = $config -> username;
+
+$ljdump = shell_exec('`which python` ljdump.py');
+echo "ljdump result: $ljdump\n";
+
 // DB connection
-include("config.inc.php");
-echo "ljuser=$ljuser\n";
 @$connect = mysql_connect($e2server, $e2user, $e2password) or die("DB is not avalible");
 mysql_select_db($e2database);
 my_sql_query("set character_set_client='cp1251'");
@@ -137,11 +150,14 @@ function get_postdata($file_id) {
 
     // Append mood, music & location info
 
+    if ($pd['mood'] || $pd['music'] || $pd['location'])
+        $pd['text'] .= PHP_EOL . PHP_EOL;
+
     // Location
     if ($pd['location']) {
         if ($pd['coords']) {
             $p_loctext = $pd['coords'] . ' (' . $pd['location'] . ')';
-            $pd['text'] .= PHP_EOL . PHP_EOL . '<strong>Current location:</strong> <a href="http://maps.google.com/maps?q=' . urlencode($p_loctext) . '">' . $pd['location'] . '</a>' . PHP_EOL;
+            $pd['text'] .= '<strong>Current location:</strong> <a href="http://maps.google.com/maps?q=' . urlencode($p_loctext) . '">' . $pd['location'] . '</a>' . PHP_EOL;
         } else {
             $pd['text'] .= PHP_EOL . PHP_EOL . '<strong>Current location:</strong> <a href="http://maps.google.com/maps?q=' . urlencode($pd['location']) . '">' . $pd['location'] . '</a>' . PHP_EOL;
         }
@@ -294,7 +310,6 @@ function get_e2_postid($e2tabprefix, $pd_text) {
 
 // XML files parser
 function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $addtags_id, $ignoretag) {
-    echo "Processing file $file_id\n";
 
     // Get post data
     $pd = get_postdata($file_id);
@@ -396,11 +411,17 @@ function assign_tags($e2tabprefix,$p_postid,$tags_id){
 $files = glob("./".$ljuser."/L-*");
 natsort($files);
 foreach($files as $file_id){
-    $current_post=preg_replace("/(.*)L-(.*)/","$2",$file_id);
+
+    $current_post = preg_replace("/(.*)L-(.*)/","$2",$file_id);
+
     // Update global tags
     $addtags_id = create_tags($e2tabprefix,$addtags);
+
     // Parse and upload posts
-    xmlparser($file_id,$current_post,$ljuser,$e2tabprefix,$offset,$addtags_id,$ignoretag);
+    xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $addtags_id, $ignoretag);
+
+    echo ".";
+    if ($current_post % 80 == 0) echo "\n";
 }
-echo "Posts processed: ".count($files)."\n";
+echo "\nPosts processed: ".count($files)."\n";
 ?>

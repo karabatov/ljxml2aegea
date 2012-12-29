@@ -1,5 +1,4 @@
 *.swp
 karabatov/
 .DS_Store
-config.inc.php.ex
-config.inc.php.sample
+ljdump.config.sample
