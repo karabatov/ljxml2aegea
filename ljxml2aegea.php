@@ -3,6 +3,8 @@
 
 //error_reporting(E_ALL);
 
+echo "Starting ljxml2aegea...\n";
+
 $config = simplexml_load_file('ljdump.config');
 
 $e2server = $config -> e2server ? $config -> e2server : 'localhost';
