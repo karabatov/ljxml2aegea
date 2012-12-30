@@ -112,8 +112,8 @@ function ljclean($ljtext) {
     $cutPA = '|<lj-cut>|i';
     $ccutPA = '|</lj-cut>|i';
 
-    $userRE = '<a href="http://$1.livejournal.com" class="lj-user">$1</a>';
-    $commRE = '<a href="http://$1.livejournal.com" class="lj-comm">$1</a>';
+    $userRE = '<span class="lj-user"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com">$1</a></span>';
+    $commRE = '<span class="lj-comm"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com">$1</a></span>';
 
     $ljclean = preg_replace($userPA,$userRE,$ljtext);
     $ljclean = preg_replace($commPA,$commRE,$ljclean);
