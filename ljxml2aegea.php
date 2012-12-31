@@ -265,10 +265,10 @@ function put_post_db($pd, $e2tabprefix, $offset) {
         $result = my_sql_query($query);
     }
 
-    return true;
+    return $e2_postid;
 }
 
-function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
+function put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset) {
 
     // Put comments into DB
     // ID = 100000 + $cd['id']
@@ -293,12 +293,6 @@ function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
 
         // ""
         $cd[$i]['text'] = mysql_escape_string($cd[$i]['text']);
-
-        // Get post ID first
-        $query = "SELECT ID,OriginalAlias FROM " . $e2tabprefix . "Notes WHERE OriginalAlias='$p_postid'";
-        $result = my_sql_query($query);
-        $t_res = mysql_fetch_assoc($result);
-        $e2_postid = $t_res['ID'] ? $t_res['ID'] : $p_postid;
 
         // Check if comment is a reply by journal author
         if (($cd[$i]['author'] == $ljuser) && ($cd[$i]['parentid'] != '')) {
@@ -350,63 +344,51 @@ function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $add
     $tag_pos = strpos($pd['tags'], $ignoretag);
     if ($tag_pos === false) {
         // Put post into DB
-        put_post_db($pd, $e2tabprefix, $offset);
+        $e2_postid = put_post_db($pd, $e2tabprefix, $offset);
 
-        // Put tags into DB
-        $p_addtags_id = create_tags($e2tabprefix, $pd['tags']);
-        assign_tags($e2tabprefix, $pd['postid'], $addtags_id);
-        assign_tags($e2tabprefix, $pd['postid'], $p_addtags_id);
+        if ($e2_postid != '') {
 
-        // Put comments into DB
-        put_comments_db($cd, $pd['postid'], $ljuser, $e2tabprefix, $offset);
+            // Put tags into DB
+            $p_addtags_id = create_tags($e2tabprefix, $pd['tags']);
+            assign_tags($e2tabprefix, $e2_postid, $addtags_id);
+            assign_tags($e2tabprefix, $e2_postid, $p_addtags_id);
+
+            // Put comments into DB
+            put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset);
+        }
 
     } else {
         // Parse post text for e2 link
-        $e2_postid = get_e2_postid($e2tabprefix, $pd['text']);
-        if ($e2_postid)
-            put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset);
+        $cross_postid = get_e2_postid($e2tabprefix, $pd['text']);
+        if ($cross_postid)
+            put_comments_db($cd, $cross_postid, $ljuser, $e2tabprefix, $offset);
     }
 
     return true;
 }
 
-function create_tags($e2tabprefix,$addtags){
+function create_tags($e2tabprefix, $addtags) {
     $tags = preg_split('~\s*,\s*~', $addtags);
     $id_tags = array();
-    foreach ($tags as $tag){
-        if ($tag != ''){
-            $t_key = iconv('UTF-8','Windows-1251',$tag);
+    foreach ($tags as $tag) {
+        if ($tag != '') {
+            $t_key = iconv('UTF-8', 'Windows-1251', $tag);
             $t_key = mysql_escape_string($t_key);
             $t_url = to_ascii($tag);
             $query = "SELECT ID,Keyword,URLName FROM " . $e2tabprefix . "Keywords WHERE URLName='$t_url'";
-            $result = mysql_query($query);
-            if (!$result) {
-                echo "$query\n";
-                die('Invalid query: ' . mysql_error() . '\n');
-            }
+            $result = my_sql_query($query);
             if (mysql_num_rows($result) == 0){
                 $query = "INSERT INTO " . $e2tabprefix . "Keywords (ID,Keyword,URLName) VALUES ('','$t_key','$t_url')";
-                $result = mysql_query($query);
-                if (!$result) {
-                    echo "$query\n";
-                    die('Invalid query: ' . mysql_error() . '\n');
-                }
+                $result = my_sql_query($query);
+
                 $query = "SELECT ID FROM " . $e2tabprefix . "Keywords WHERE URLName='$t_url'";
-                $result = mysql_query($query);
-                if (!$result) {
-                    echo "$query\n";
-                    die('Invalid query: ' . mysql_error() . '\n');
-                }
+                $result = my_sql_query($query);
                 $t_res = mysql_fetch_assoc($result);
                 $id_tags[$t_url]['ID'] = $t_res['ID'];
                 $id_tags[$t_url]['URLName'] = $t_url;
             } else {
                 $query = "SELECT ID FROM " . $e2tabprefix . "Keywords WHERE URLName='$t_url'";
-                $result = mysql_query($query);
-                if (!$result) {
-                    echo "$query\n";
-                    die('Invalid query: ' . mysql_error() . '\n');
-                }
+                $result = my_sql_query($query);
                 $t_res = mysql_fetch_assoc($result);
                 $id_tags[$t_url]['ID'] = $t_res['ID'];
                 $id_tags[$t_url]['URLName'] = $t_url;
@@ -416,35 +398,28 @@ function create_tags($e2tabprefix,$addtags){
     return $id_tags;
 }
 
-function assign_tags($e2tabprefix,$p_postid,$tags_id){
-    foreach($tags_id as $tag){
+function assign_tags($e2tabprefix, $p_postid, $tags_id) {
+    foreach($tags_id as $tag) {
         $t_id = $tag['ID'];
         $query = "SELECT ID,NoteID,KeywordID FROM " . $e2tabprefix . "NotesKeywords WHERE NoteID='$p_postid' AND KeywordID='$t_id'";
-        $result = mysql_query($query);
-        if (!$result) {
-            echo "$query\n";
-            die('Invalid query: ' . mysql_error() . '\n');
-        }
-        if (mysql_num_rows($result) == 0){
+        $result = my_sql_query($query);
+        if (mysql_num_rows($result) == 0) {
             $query = "INSERT INTO " . $e2tabprefix . "NotesKeywords (ID,NoteID,KeywordID) VALUES ('','$p_postid','$t_id')";
-            $result = mysql_query($query);
-            if (!$result) {
-                echo "$query\n";
-                die('Invalid query: ' . mysql_error() . '\n');
-            }
+            $result = my_sql_query($query);
         }
     }
     return true;
 }
 
-$files = glob("./".$ljuser."/L-*");
+$files = glob("./$ljuser/L-*");
 natsort($files);
-foreach($files as $file_id){
 
-    $current_post = preg_replace("/(.*)L-(.*)/","$2",$file_id);
+foreach($files as $file_id) {
+
+    $current_post = preg_replace("/(.*)L-(.*)/", "$2", $file_id);
 
     // Update global tags
-    $addtags_id = create_tags($e2tabprefix,$addtags);
+    $addtags_id = create_tags($e2tabprefix, $addtags);
 
     // Parse and upload posts
     xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $addtags_id, $ignoretag);
@@ -452,5 +427,5 @@ foreach($files as $file_id){
     echo ".";
     if ($current_post % 80 == 0) echo "\n";
 }
-echo "\nPosts processed: ".count($files)."\n";
+echo "\nPosts processed: " . count($files) . "\n";
 ?>
