@@ -3,8 +3,6 @@
 
 //error_reporting(E_ALL);
 
-echo "Starting ljxml2aegea...\n";
-
 $config = simplexml_load_file('ljdump.config');
 
 $e2server = $config -> e2server ? $config -> e2server : 'localhost';
@@ -17,8 +15,9 @@ $addtags = $config -> addtags ? $config -> addtags : 'LiveJournal';
 $ignoretag = $config -> ignoretag ? $config -> ignoretag : 'e2import';
 $ljuser = $config -> username;
 
+echo "Starting ljdump...\n";
 $ljdump = shell_exec('`which python` ljdump.py');
-echo "ljdump result: $ljdump\n";
+echo "$ljdump\n";
 
 // DB connection
 @$connect = mysql_connect($e2server, $e2user, $e2password) or die("DB is not avalible");
@@ -28,9 +27,9 @@ my_sql_query("set character_set_results='cp1251'");
 my_sql_query("set collation_connection='cp1251_general_ci'");
 // Ensure future e2 content isn't overwritten
 my_sql_query("ALTER TABLE " . $e2tabprefix . "Comments AUTO_INCREMENT = 500000");
-my_sql_query("ALTER TABLE " . $e2tabprefix . "Notes AUTO_INCREMENT = 1000000000");
+// my_sql_query("ALTER TABLE " . $e2tabprefix . "Notes AUTO_INCREMENT = 1000000000");
 
-echo "connected to sql\n";
+echo "Connected to DB\n";
 
 // Convert tags to ascii for URLs
 function to_ascii($str, $delimiter='-') {
@@ -224,6 +223,12 @@ function put_post_db($pd, $e2tabprefix, $offset) {
     $pd['text'] = mysql_escape_string($pd['text']);
     $pd['subject'] = mysql_escape_string($pd['subject']);
 
+    // Find e2 post ID first
+    $query = "SELECT ID,OriginalAlias FROM " . $e2tabprefix . "Notes WHERE OriginalAlias='" . $pd['postid'] . "'";
+    $result = my_sql_query($query);
+    $t_res = mysql_fetch_assoc($result);
+    $e2_postid = $t_res['ID'] ? $t_res['ID'] : '';
+
     // Put post into DB
     // ID = $pd['postid']
     // Title = $pd['subject']
@@ -234,16 +239,31 @@ function put_post_db($pd, $e2tabprefix, $offset) {
     // LastModified = $pd['date']
     // IsDST = 0
     // Offset = $offset
-    $query = "INSERT INTO " . $e2tabprefix . "Notes (ID,Title,OriginalAlias,Text,IsPublished,IsVisible,Stamp,LastModified,IsDST,Offset,IP) VALUES (" . $pd['postid'] . ",'" . $pd['subject'] . "','" . $pd['postid'] . "','" . $pd['text'] . "',1," . $pd['visible'] . ",'" . $pd['date'] . "','" . $pd['date'] . "',0,$offset,'127.0.0.1') ON DUPLICATE KEY UPDATE ID=" . $pd['postid'] . ",Title='" . $pd['subject'] . "',OriginalAlias='" . $pd['postid'] . "',Text='" . $pd['text'] . "',IsPublished=1,IsVisible=" . $pd['visible'] . ",Stamp='" . $pd['date'] . "',LastModified='" . $pd['date'] . "',IsDST=0,Offset=$offset,IP='127.0.0.1'";
+    $query = "INSERT INTO " . $e2tabprefix . "Notes (ID,Title,OriginalAlias,Text,IsPublished,IsVisible,Stamp,LastModified,IsDST,Offset,IP) VALUES ('$e2_postid','" . $pd['subject'] . "','" . $pd['postid'] . "','" . $pd['text'] . "',1," . $pd['visible'] . ",'" . $pd['date'] . "','" . $pd['date'] . "',0,$offset,'127.0.0.1') ON DUPLICATE KEY UPDATE ID='$e2_postid',Title='" . $pd['subject'] . "',OriginalAlias='" . $pd['postid'] . "',Text='" . $pd['text'] . "',IsPublished=1,IsVisible=" . $pd['visible'] . ",Stamp='" . $pd['date'] . "',LastModified='" . $pd['date'] . "',IsDST=0,Offset=$offset,IP='127.0.0.1'";
     $result = my_sql_query($query);
 
+    // Check if Alias has been defined first
+    if ($e2_postid != '') {
+        $query = "SELECT ID,EntityID FROM " . $e2tabprefix . "Aliases WHERE EntityID='$e2_postid'";
+        $result = my_sql_query($query);
+        $t_res = mysql_fetch_assoc($result);
+        $e2_aliasid = $t_res['ID'] ? $t_res['ID'] : '';
+    } else { // Get the ID new post has received
+        $query = "SELECT ID,OriginalAlias FROM " . $e2tabprefix . "Notes WHERE OriginalAlias='" . $pd['postid'] . "'";
+        $result = my_sql_query($query);
+        $t_res = mysql_fetch_assoc($result);
+        $e2_postid = $t_res['ID'] ? $t_res['ID'] : '';
+        $e2_aliasid = '';
+    }
     // Assign alias to post
     // ID = $pd['postid']
     // EntityID = $pd['postid']
     // Alias = $pd['postid']
     // Stamp = $pd['date']
-    $query = "INSERT INTO " . $e2tabprefix . "Aliases (ID,EntityID,Alias,Stamp) VALUES (" . $pd['postid'] . "," . $pd['postid'] . ",'" . $pd['postid'] . "','" . $pd['date'] . "') ON DUPLICATE KEY UPDATE ID=" . $pd['postid'] . ",EntityID=" . $pd['postid'] . ",Alias='" . $pd['postid'] . "',Stamp='" . $pd['date'] . "'";
-    $result = my_sql_query($query);
+    if ($e2_postid != '') { // Don't bother if there's no new post ID
+        $query = "INSERT INTO " . $e2tabprefix . "Aliases (ID,EntityID,Alias,Stamp) VALUES ('$e2_aliasid','$e2_postid','" . $pd['postid'] . "','" . $pd['date'] . "') ON DUPLICATE KEY UPDATE ID='$e2_aliasid',EntityID='$e2_postid',Alias='" . $pd['postid'] . "',Stamp='" . $pd['date'] . "'";
+        $result = my_sql_query($query);
+    }
 
     return true;
 }
@@ -274,6 +294,12 @@ function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
         // ""
         $cd[$i]['text'] = mysql_escape_string($cd[$i]['text']);
 
+        // Get post ID first
+        $query = "SELECT ID,OriginalAlias FROM " . $e2tabprefix . "Notes WHERE OriginalAlias='$p_postid'";
+        $result = my_sql_query($query);
+        $t_res = mysql_fetch_assoc($result);
+        $e2_postid = $t_res['ID'] ? $t_res['ID'] : $p_postid;
+
         // Check if comment is a reply by journal author
         if (($cd[$i]['author'] == $ljuser) && ($cd[$i]['parentid'] != '')) {
             // Ensure existing e2 comments aren't overwritten
@@ -283,7 +309,7 @@ function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
         } else {
             // Ensure existing e2 comments aren't overwritten
             $cd[$i]['id'] += 100000;
-            $query = "INSERT INTO " . $e2tabprefix . "Comments (ID,NoteID,AuthorName,AuthorEmail,Text,IsVisible,Stamp,LastModified) VALUES (" . $cd[$i]['id'] . ",$p_postid,'" . $cd[$i]['author'] . "','" . $cd[$i]['author'] . "@livejournal.com','" . $cd[$i]['text'] . "','" . $cd[$i]['state'] . "','" . $cd[$i]['date'] . "','" . $cd[$i]['date'] . "') ON DUPLICATE KEY UPDATE NoteID=$p_postid,AuthorName='" . $cd[$i]['author'] . "',AuthorEmail='" . $cd[$i]['author'] . "@livejournal.com',Text='" . $cd[$i]['text'] . "',IsVisible='" . $cd[$i]['state'] . "',Stamp='" . $cd[$i]['date'] . "',LastModified='" . $cd[$i]['date'] . "';"; 
+            $query = "INSERT INTO " . $e2tabprefix . "Comments (ID,NoteID,AuthorName,AuthorEmail,Text,IsVisible,Stamp,LastModified) VALUES (" . $cd[$i]['id'] . ",'$e2_postid','" . $cd[$i]['author'] . "','" . $cd[$i]['author'] . "@livejournal.com','" . $cd[$i]['text'] . "','" . $cd[$i]['state'] . "','" . $cd[$i]['date'] . "','" . $cd[$i]['date'] . "') ON DUPLICATE KEY UPDATE NoteID='$e2_postid',AuthorName='" . $cd[$i]['author'] . "',AuthorEmail='" . $cd[$i]['author'] . "@livejournal.com',Text='" . $cd[$i]['text'] . "',IsVisible='" . $cd[$i]['state'] . "',Stamp='" . $cd[$i]['date'] . "',LastModified='" . $cd[$i]['date'] . "';"; 
             $result = my_sql_query($query);
         }
     }
@@ -291,6 +317,7 @@ function put_comments_db($cd, $p_postid, $ljuser, $e2tabprefix, $offset) {
     return true;
 }
 
+// Get crossposted e2 post ID from LJ imported post
 function get_e2_postid($e2tabprefix, $pd_text) {
 
     $e2_postid = '';
