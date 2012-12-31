@@ -229,8 +229,11 @@ function put_post_db($pd, $e2tabprefix, $offset) {
     $t_res = mysql_fetch_assoc($result);
     $e2_postid = $t_res['ID'] ? $t_res['ID'] : '';
 
+    // Fix date
+    $pd['date'] = $pd['date'] - $offset;
+
     // Put post into DB
-    // ID = $pd['postid']
+    // ID = $e2_postid
     // Title = $pd['subject']
     // Text = $pd['text']
     // OriginalAlias = $pd['postid']
@@ -256,8 +259,8 @@ function put_post_db($pd, $e2tabprefix, $offset) {
         $e2_aliasid = '';
     }
     // Assign alias to post
-    // ID = $pd['postid']
-    // EntityID = $pd['postid']
+    // ID = $e2_aliasid
+    // EntityID = $e2_postid
     // Alias = $pd['postid']
     // Stamp = $pd['date']
     if ($e2_postid != '') { // Don't bother if there's no new post ID
@@ -272,7 +275,7 @@ function put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset) {
 
     // Put comments into DB
     // ID = 100000 + $cd['id']
-    // NoteID = $p_postid
+    // NoteID = $e2_postid
     // AuthorName = $cd['author']
     // AuthorEmail $cd['author'] + @livejournal.com
     // Text = $cd['text']
