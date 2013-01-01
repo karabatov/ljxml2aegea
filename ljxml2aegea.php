@@ -344,7 +344,7 @@ function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $add
     $cd = get_commentdata($file_id);
 
     // Check if post has "ignore tag"
-    $tag_pos = strpos($pd['tags'], $ignoretag);
+    $tag_pos = mb_stripos($pd['tags'], $ignoretag);
     if ($tag_pos === false) {
         // Put post into DB
         $e2_postid = put_post_db($pd, $e2tabprefix, $offset);
@@ -363,7 +363,7 @@ function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $add
     } else {
         // Parse post text for e2 link
         $cross_postid = get_e2_postid($e2tabprefix, $pd['text']);
-        if ($cross_postid)
+        if ($cross_postid != '')
             put_comments_db($cd, $cross_postid, $ljuser, $e2tabprefix, $offset);
     }
 
