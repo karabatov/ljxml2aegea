@@ -12,8 +12,8 @@ $e2password = $config -> e2password ? $config -> e2password : '';
 $e2tabprefix = $config -> e2tabprefix ? $config -> e2tabprefix : 'e2Blog';
 $offset = $config -> offset ? $config -> offset : 0;
 $addtags = $config -> addtags ? $config -> addtags : 'LiveJournal';
-$ignoretag = $config -> ignoretag ? $config -> ignoretag : 'e2import';
-$ljuser = $config -> username;
+$ignoretag = $config -> ignoretag ? trim($config -> ignoretag) : 'e2import';
+$ljuser = trim($config -> username);
 
 echo "Starting ljdump...\n";
 $ljdump = shell_exec('`which python` ljdump.py');
@@ -22,12 +22,11 @@ echo "$ljdump\n";
 // DB connection
 @$connect = mysql_connect($e2server, $e2user, $e2password) or die("DB is not avalible");
 mysql_select_db($e2database);
-my_sql_query("set character_set_client='cp1251'");
-my_sql_query("set character_set_results='cp1251'");
-my_sql_query("set collation_connection='cp1251_general_ci'");
+my_sql_query("set character_set_client='utf8'");
+my_sql_query("set character_set_results='utf8'");
+my_sql_query("set collation_connection='utf8_general_ci'");
 // Ensure future e2 content isn't overwritten
 my_sql_query("ALTER TABLE " . $e2tabprefix . "Comments AUTO_INCREMENT = 500000");
-// my_sql_query("ALTER TABLE " . $e2tabprefix . "Notes AUTO_INCREMENT = 1000000000");
 
 echo "Connected to DB\n";
 
@@ -95,7 +94,7 @@ function to_ascii($str, $delimiter='-') {
         "t", "u", "f", "h", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya",
     );
 
-    $clean = str_replace($toreplace,$replacement,$str);
+    $clean = str_replace($toreplace, $replacement, $str);
     $clean = preg_replace("/[^a-zA-Z0-9\/_|+ -]/", '', $clean);
     $clean = strtolower(trim($clean, '-'));
     $clean = preg_replace("/[\/_|+ -]+/", $delimiter, $clean);
@@ -113,14 +112,14 @@ function ljclean($ljtext) {
     $cutPA = '|<lj-cut>|i';
     $ccutPA = '|</lj-cut>|i';
 
-    $userRE = '<span class="lj-user"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com">$1</a></span>';
-    $commRE = '<span class="lj-comm"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com">$1</a></span>';
+    $userRE = '<span class="lj-user"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com"><b>$1</b></a></span>';
+    $commRE = '<span class="lj-comm"><a href="http://$1.livejournal.com/profile"><img width="16" height="16" src="http://l-stat.livejournal.com/img/userinfo.gif"></a><a href="http://$1.livejournal.com"><b>$1</b></a></span>';
 
-    $ljclean = preg_replace($userPA,$userRE,$ljtext);
-    $ljclean = preg_replace($commPA,$commRE,$ljclean);
-    $ljclean = preg_replace($namedCutPA,'$1',$ljclean);
-    $ljclean = preg_replace($cutPA,'',$ljclean);
-    $ljclean = preg_replace($ccutPA,'',$ljclean);
+    $ljclean = preg_replace($userPA, $userRE, $ljtext);
+    $ljclean = preg_replace($commPA, $commRE, $ljclean);
+    $ljclean = preg_replace($namedCutPA, '$1', $ljclean);
+    $ljclean = preg_replace($cutPA, '', $ljclean);
+    $ljclean = preg_replace($ccutPA, '', $ljclean);
 
     return $ljclean;
 }
@@ -204,7 +203,7 @@ function get_commentdata($file_id) {
 
 function my_sql_query($query) {
 
-    $result = mysql_query ($query);
+    $result = mysql_query($query);
     if (!$result) {
         echo "$query\n";
         die('Invalid query: ' . mysql_error() . '\n');
@@ -214,10 +213,6 @@ function my_sql_query($query) {
 }
 
 function put_post_db($pd, $e2tabprefix, $offset) {
-
-    // Convert to cp1251
-    $pd['subject'] = iconv('UTF-8', 'Windows-1251//IGNORE', $pd['subject']);
-    $pd['text'] = iconv('UTF-8', 'Windows-1251//IGNORE', $pd['text']);
 
     // ""
     $pd['text'] = mysql_escape_string($pd['text']);
@@ -289,10 +284,6 @@ function put_comments_db($cd, $e2_postid, $ljuser, $e2tabprefix, $offset) {
     for ($i = 1; $i <= count($cd); $i++) {
         if ($cd[$i]['text'] == '')
             $cd[$i]['text'] = '(deleted comment)';
-
-        // Convert encoding
-        $cd[$i]['text'] = iconv('UTF-8', 'Windows-1251//IGNORE', $cd[$i]['text']);
-        $cd[$i]['author'] = iconv('UTF-8', 'Windows-1251//IGNORE', $cd[$i]['author']);
 
         // ""
         $cd[$i]['text'] = mysql_escape_string($cd[$i]['text']);
@@ -371,12 +362,11 @@ function xmlparser($file_id, $current_post, $ljuser, $e2tabprefix, $offset, $add
 }
 
 function create_tags($e2tabprefix, $addtags) {
-    $tags = preg_split('~\s*,\s*~', $addtags);
+    $tags = preg_split('|\s*,\s*|', $addtags);
     $id_tags = array();
     foreach ($tags as $tag) {
         if ($tag != '') {
-            $t_key = iconv('UTF-8', 'Windows-1251', $tag);
-            $t_key = mysql_escape_string($t_key);
+            $t_key = mysql_escape_string($tag);
             $t_url = to_ascii($tag);
             $query = "SELECT ID,Keyword,URLName FROM " . $e2tabprefix . "Keywords WHERE URLName='$t_url'";
             $result = my_sql_query($query);
